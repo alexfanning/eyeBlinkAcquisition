@@ -1,0 +1,6 @@
+
+cd C:\Users\pcald\OneDrive\Documents\Alex\code\python
+
+C:\Users\pcald\OneDrive\Documents\Alex\code\python\vimba_env\Scripts\activate
+
+py capture_triggered.py

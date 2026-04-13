@@ -1,0 +1,189 @@
+
+'--------------------------------------------------------------------------------
+' EXPERIMENT PARAMETERS
+'--------------------------------------------------------------------------------
+var nBlocks% := 6;                 'Number of run-test blocks in exmpt
+var nTestreps% := 1;               'Number of times to repeat 40 sec test
+var runLength := 300;             'Seconds to run protocol in each block(300 for 5 min)
+var testLength := 45;             'Seconds to test
+var expmtLoc% := 1;
+var prePostNum := 1;
+var trainLoc% := 1;
+var trainAmount := 0;
+var expmtMode := 2;               'expmtMode: 0=off, 1=0x, 2=2x, 3=ipsi stim, 4=contra stim
+var testString$;
+var runExpmt% := 0;               ' Random note: % denotes integer types
+var rep% := 0;                    'Rep (5min run, 40 sec test)
+var test% := 1;                   'test: 0=run testLength, 1=test testLength, 2=init&wait 20 sec, 3=init&wait 10 sec,  4=init&wait runLength
+var testrep% := 0;
+var goalTime := 1000000000;    'maximum time the motor is allowed to run for
+var flashon% := 1;
+var waitLength := 300;
+var prevTime := 0;
+
+'--------------------------------------------------------------------------------
+' MISC PARAMETERS
+'--------------------------------------------------------------------------------
+var SampleWindow%;
+var comment$;
+
+'--------------------------------------------------------------------------------
+' TOOLBAR PARAMETERS
+'--------------------------------------------------------------------------------
+const NewFilePos        := 2;
+const InitPos           := NewFilePos+1;
+const CommentPos        := InitPos+1;
+const LightPos          := CommentPos+1;
+const LaserPos          := LightPos+1;
+const SinePos           := LaserPos+1;
+const SineConfigPos     := SinePos+1;
+const PulsePos          := SineConfigPos+1;
+const PulseConfigPos    := PulsePos+1;
+const VidPos            := PulseConfigPos+1;
+const StepPos           := VidPos+1;
+const StepConfigPos     := StepPos+1;
+const ExpmtPos          := StepConfigPos+1;
+const ExpmtConfigPos    := ExpmtPos+1;
+const devPos            := ExpmtConfigPos+1;
+
+'--------------------------------------------------------------------------------
+' OTHER FUNCTIONS
+'--------------------------------------------------------------------------------
+Proc ToolbarConfig()
+  ToolbarClear();     'Remove any old buttons
+
+  ToolbarSet(0, "Idle",ToolbarIdle%);
+  ToolbarSet(1, "Quit",  ToolbarQuit%);
+  ToolbarSet(ExpmtPos, "Run Expmt", ToolbarRunExpmt%);
+  ToolbarSet(ExpmtConfigPos, "Expmt Config", ToolbarConfigExpmt%);
+  ToolbarSet(CommentPos, "Comment", ToolbarComment%);
+  ToolbarSet(NewFilePos, "New File", ToolbarNew%);
+  Toolbar("", 231);
+End
+
+Proc WindowConfig()
+
+  SampleClear(); 'Set the sampling configuration to a standard state
+
+  'sequencer setup - returns zero if OK
+  var err%; err% := SampleSequencer( SequencerFile$ );
+  if err%<0 then
+  	Message(Print$("I can't find your Sequencer File:%s",Error$(err%)));
+  	halt
+  endif
+
+  'Channel 1
+  SampleEvent(1,7,2,1000);     'Func SampleEvent(chan%, port%, type%, rate);
+  SampleTitle$(1,"Cam");
+  SampleComment$(1, "Camera");
+
+  'Channel 2
+  SampleEvent(2,5,2,1000);
+  SampleTitle$(2,"Puff");
+  SampleComment$(2, "AirPuff");
+
+  'Channel 3
+  SampleEvent(3,3,2,1000);
+  SampleTitle$(3,"Stim");
+  SampleComment$(3, "Stimulator");
+
+  'Channel 4
+  SampleEvent(4,6,2,1000);
+  SampleTitle$(4,"Tone");
+  SampleComment$(4, "Tone");
+
+  SampleEvent(5, 2, 2, 1000);
+  SampleTitle$(5,"NPX");
+  SampleComment$(5, "NPX");
+
+  'Channel 30
+  SampleTextMark(200);
+  SampleDigMark(150);
+
+  'Set optimise mode (do this last)
+  SampleOptimise(1,1,0,2,50);
+
+  'Continuous sampling
+  SampleMode(1);
+
+  'Create a spike2 data file and make the new window visible immediately
+  SampleWindow% := FileNew(0,1);
+
+  'Hide all
+  ChanHide(-1);
+
+  'Show certain channels in a particular order
+  'ChanShow(1,2,3,4,5,6,7,8,9,10,11,12,13,14,30,31);
+  ChanShow(1,2,3,4,5,30,31,32); 'Alex Fanning
+
+  'Channel y-range (channel num, low, high)
+  YRange( 1, -10, 10 );
+  YRange( 2, -10, 10 );
+  YRange( 3, -10, 10 );
+  YRange( 4, -10, 10 );
+
+  XRange( 0, 20);      ' Set the default X axis time range
+
+  ' Channel order
+'  ChanOrder(0, -1, "5, 4, 8, 13, 3, 2, 1, 12, 11, 10, 9, 30, 31"); 'Alex Fanning
+
+  ' Background Colour'
+  ViewColour(0,5);
+  ' Font
+  FontSet("Verdana", 8, 0);
+
+  ' Useful Zero line indicators
+  HCursorNew(1);
+  HCursor(1, 0, 1);
+
+  HCursorNew(2);
+  HCursor(2, 0, 2);
+
+  HCursorNew(3);
+  HCursor(3, 0, 3);
+
+  HCursorNew(4);
+  HCursor(4, 0, 4);
+
+End
+
+Func ToolbarNew%()
+  WindowConfig();
+  ' Make window full screen
+  WindowVisible(3);
+  Return (1);
+End
+
+Func ToolbarComment%()
+  DlgCreate("Comment"); 'Start new dialog for entering comments
+  DlgString(1,"Comment",200);
+  DlgShow(comment$);
+  SampleText(comment$);
+  Return(1);
+End
+
+Func ToolbarRunExpmt%()
+  runExpmt% := 1;
+  rep% := 0;                   'Rep (5min run, 40 sec test)
+  test% := 0;                  'test: 0=run testLength, 1=test testLength, 2=init&wait 20 sec, 3=init&wait 10 sec,  4=init&wait runLength
+  testrep% := 0;                ' Changed from 0 to 1 5/2/14 so that VORD is only tested once at the beginning
+  goalTime := MaxTime();
+  SampleSeqCtrl(1);
+  SampleKey("H");
+  SampleKey("I");
+  ToolbarSet(ExpmtPos, "Quit Expmt",ToolbarQuitExpmt%);
+  Return(1);
+End
+
+Func ToolbarQuitExpmt%()
+  runExpmt% := 0;
+  SampleKey("I");
+  SampleKey("h");
+  ToolbarSet(ExpmtPos, "Run Expmt",ToolbarRunExpmt%);
+  Return(1)
+End
+
+Func ToolbarQuit%()
+  SampleKey( "O" );
+  Return( 0 );
+End

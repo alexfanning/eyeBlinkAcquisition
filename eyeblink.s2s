@@ -1,0 +1,165 @@
+'--------------------------------------------------------------------------------
+' Eyeblink.s2s
+' Uses Parameters_Universal's Run Expmt button (which sends key "H" and sets test%=0).
+'
+' Workflow:
+'   1) Click New File (loads sequencer + config channels)
+'   2) Press Spike2 START (sampling scrolls)
+'   3) Click Run Expmt
+'--------------------------------------------------------------------------------
+
+
+'----- point New File to your eyeblink sequencer -----
+var SequencerFile$ := "C:\\Users\\pcald\\OneDrive\\Documents\\Alex\\code\\spike2\\Sequencer_Eyeblink.pls";
+#include "C:\\Users\\pcald\\OneDrive\\Documents\\Alex\\code\\spike2\\ParametersUniversal.s2s"
+
+'----- Eyeblink parameters -----
+var EB_spontS := 600.0;       ' spontaneous recording seconds (default 600)
+var EB_trials% := 100;
+var EB_itiMin := 5.0;
+var EB_itiMax := 11.0;
+
+' trial timings (seconds)
+var EB_baseline := 0.198;
+var EB_toneDur  := 0.048;
+var EB_gap      := 0.248;
+var EB_puffDur  := 0.018;
+
+var EB_trial% := 0;
+var EB_itiNow := 0.0;
+
+'--------------------------------------------------------------------------------
+' MAIN PROGRAM
+'--------------------------------------------------------------------------------
+ToolbarConfig();
+
+Message(
+  "Eyeblink loaded.\n\n" +
+  "1) New File\n" +
+  "2) Spike2 START\n" +
+  "3) Run Expmt (you will see H)\n"
+);
+
+'--------------------------------------------------------------------------------
+' Eyeblink config dialog (this overrides the universal experiment config)
+'--------------------------------------------------------------------------------
+Func ToolbarConfigExpmt%()
+  DlgCreate("Eyeblink settings");
+  DlgReal(1, "Spontaneous (seconds)", 0, 7200);
+  DlgInteger(2, "Trials", 1, 2000, 0, 0, 1);
+  DlgReal(3, "ITI min (s)", 0, 120);
+  DlgReal(4, "ITI max (s)", 0, 300);
+
+  DlgShow(EB_spontS, EB_trials%, EB_itiMin, EB_itiMax);
+
+  if EB_itiMax < EB_itiMin then
+    EB_itiMax := EB_itiMin;
+  endif;
+
+  SampleText("Eyeblink params: spontS=" + Str$(EB_spontS) +
+             ", trials=" + Str$(EB_trials%) +
+             ", ITI=" + Str$(EB_itiMin) + "-" + Str$(EB_itiMax));
+  Return(1);
+End
+
+'--------------------------------------------------------------------------------
+' IDLE LOOP (this is the experiment)
+' We start from test%=0 because that's what Parameters_Universal sets on Run Expmt.
+'--------------------------------------------------------------------------------
+Func ToolbarIdle%()
+
+  ' Require sampling view running (same as Experiment_Default)
+  var currView := ViewKind();
+  if currView <> 0 then
+    Return(1);
+  endif;
+
+  if runExpmt% <> 1 then
+    Return(1);
+  endif;
+
+  if MaxTime() < goalTime then
+    Return(1);
+  endif;
+
+  docase
+
+    '------------------------------------------------------------
+    ' test%=0 : BEGIN spontaneous period
+    '------------------------------------------------------------
+    case test% = 0 then
+      EB_trial% := 0;
+
+      SampleText("NPX_PULSE_ON start spontaneous");
+      SampleKey("N");
+
+      ' log offset of NPX pulse
+      goalTime := MaxTime();
+      test% := 1;
+
+    ' Wait EB_spontS seconds
+    case test% = 1 then
+      goalTime := MaxTime() + EB_spontS;
+      test% := 2;
+
+    '------------------------------------------------------------
+    ' End spontaneous: NPX stop pulse (B), then STIM ON + NPX start pulse (C)
+    '------------------------------------------------------------
+    case test% = 2 then
+      SampleKey("n");
+      goalTime := MaxTime() + 0.98;
+      test% := 3;
+
+    case test% = 3 then
+      ' Turn stimulator ON and start trial-block neuropixels
+      SampleText("STIM_ON + NPX_PULSE_ON start trial block");
+      SampleKey("S");
+      goalTime := MaxTime() + 9.98;
+      EB_trial% := 1;
+      test% := 4;
+
+    ' gap done -> puff or CS-only
+    case test% = 4 then
+      if (EB_trial% mod 5) <> 0 then
+        SampleText("Trial " + Str$(EB_trial%) + " PUFF_ON (Key P)");
+        SampleKey("P");
+        goalTime := MaxTime() + EB_baseline + EB_toneDur + EB_gap + EB_puffDur;
+        test% := 5;
+      else
+        SampleText("Trial " + Str$(EB_trial%) + " CS_ONLY (no puff)");
+        SampleKey("C");
+        goalTime := MaxTime() + EB_baseline + EB_toneDur + EB_gap + EB_puffDur;
+        test% := 5;
+      endif;
+    case test% = 5 then
+      EB_itiNow := EB_itiMin + (EB_itiMax - EB_itiMin) * Rand();
+      goalTime := MaxTime() + EB_itiNow - 1.28;
+      test% := 6;
+
+    ' ITI done -> next trial or end
+    case test% = 6 then
+      EB_trial% := EB_trial% + 1;
+
+      if EB_trial% > EB_trials% then
+        test% := 7;
+        Return(1);
+      endif;
+      test% := 4;
+
+    '------------------------------------------------------------
+    ' END STATES
+    '------------------------------------------------------------
+    case test% = 7 then
+      SampleText("NPX_PULSE_OFF");
+      SampleText("STIM_OFF");
+      SampleKey("I");
+      SampleKey("n");
+
+      SampleText("Eyeblink COMPLETE");
+      ToolbarQuitExpmt%();   ' turns runExpmt off, sends h, resets stuff per your framework
+      Return(1);
+
+  endcase;
+
+  Return(1);
+End
